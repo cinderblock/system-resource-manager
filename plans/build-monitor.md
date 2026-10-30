@@ -103,14 +103,14 @@ cheapest to observe last:
 - `srmd` is the same code on every Agent; there is no separate thin client. Devices can't run
   anything, so they are represented by probes, and any node can host a probe.
 - **Network face is off by default.** When enabled, `srmd` serves read-only `GET /v1/snapshot` and
-  Prometheus `GET /metrics` over HTTP with a bearer token. It requires a token for any non-loopback
-  bind and is meant to bind the tailnet address, which gives encryption and identity. Servers not
+  Prometheus `GET /metrics` over HTTP. It always requires a token (`X-Srm-Token`, or a bearer token
+  for Prometheus) and is meant to bind the tailnet address, which gives encryption and identity. Servers not
   on the tailnet can use the existing Caddy TLS + basic-auth pattern, which peer URLs support.
 - **Discovery:** mDNS (`_srmd._tcp`) finds peers on the same LAN. mDNS does not
   cross subnets or the tailnet, so a static `[[peers]]` list covers everything else. That list is a natural thing for
   infrastructure tooling to generate later.
-- **Pull, not push.** mDNS announces existence; state is pulled by whoever is interested, so a node
-  with no watchers does no network work.
+- **Pull, not push.** mDNS announces existence; state is pulled by whoever is interested, and a node
+  with no watchers polls six times less often.
 - **Generalised resources.** The broker's unit is a named pool, not "CPU". `cpu` is simply the
   default pool. `[resources.camera-warehouse] capacity = 1` gives an exclusive lock, which is where
   `workspace-contention`'s ports / cameras / COM devices can eventually move. Leases are connections,
@@ -137,12 +137,12 @@ Answered 2026-10-30:
 ## Plan / steps
 
 1. [x] Agree architecture.
-2. [ ] `git init`; workspace; `srm-proto`. <- **current**
-3. [ ] Broker core + daemon + `srmctl run/status`, with Job Object.
-4. [ ] `cpu-slots.mjs` shim, verified against svdsa's usage.
-5. [ ] Sampler, unbrokered detection, history.
-6. [ ] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, prometheus).
-7. [ ] Tauri tray app.
+2. [x] `git init`; workspace; `srm-proto`.
+3. [x] Broker core + daemon + `srmctl run/status`, with Job Object.
+4. [x] `cpu-slots.mjs` shim, verified against svdsa's usage.
+5. [x] Sampler, unbrokered detection, history.
+6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
+7. [ ] Tauri tray app. <- **current**
 8. [ ] Cutover: install to `~/.srm/bin`, replace `cpu-slots.mjs`, rewrite the skill, README.
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
@@ -154,10 +154,29 @@ machine to anything is a separate per-change authorization. See Things not to do
   `~/.srm/config.toml` directly and caches what the daemon reports on acquire.
 - `node ... cpu-slots.mjs run` is what t3code's launcher calls, so exit-code passthrough is API.
 
+- **Be invisible while working (user request, 2026-10-30).** Windows appearing and beeps were
+  distracting while this was being built. The cause wasn't pinned down. Likely the test suites:
+  hundreds of console programs per run, each able to open a window from a console-less parent.
+  Tests and the shim now use `CREATE_NO_WINDOW` / `windowsHide`. Don't open previews or launch the
+  tray app without asking.
+- `cargo test` builds a package's binary only for that package's own integration tests, so
+  `crates/srmd/tests/binary.rs` exists to keep the daemon fresh for `srmctl`'s tests. Before it,
+  every fleet test ran against a stale daemon and failed with "nothing listening".
+- The old broker doesn't record waiters, so a queued build looks like nothing is happening: a
+  4-slot build sat invisible behind a 1-slot job for 10 minutes. Limitation 1, seen first-hand.
+- SvelteKit 3: no `svelte.config.js` (options go to the `sveltekit()` plugin, not under `kit`), no
+  `$lib`, and it needs TypeScript 6 (TypeScript 7 has no JS API).
+- A daemon started through a pipe would inherit that pipe and hang the reader forever. See
+  `std_handles` in `crates/proto/src/client.rs`.
+
 ## Progress log
 
 - [x] Read existing skill + broker
 - [x] Architecture agreed (2026-10-30)
+- [x] Protocol, broker, sampler, history, `srmctl`, job object, shim, network layer: tested
+- [x] Tray frontend reviewed in a browser with demo data
+- [ ] Tray app built and run against a real daemon
+- [ ] Cutover
 
 ## Open questions for the user
 

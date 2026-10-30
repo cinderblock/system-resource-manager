@@ -9,6 +9,19 @@ use std::time::{Duration, Instant};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
+/// A suite starts hundreds of console programs. Started from a parent with no console,
+/// each would open a window on the desktop of whoever is working at this machine.
+pub fn hidden(program: &str) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 pub struct Env {
     pub home: PathBuf,
     pub endpoint: String,
@@ -34,7 +47,7 @@ impl Env {
     }
 
     pub fn ctl(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_srmctl"));
+        let mut command = hidden(env!("CARGO_BIN_EXE_srmctl"));
         command
             .env("SRM_HOME", &self.home)
             .env("SRM_ENDPOINT", &self.endpoint);

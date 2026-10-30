@@ -9,7 +9,7 @@ mod common;
 use common::Env;
 use serde_json::Value;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 /// Long enough that a loaded machine can't finish it before a test has looked.
@@ -198,7 +198,7 @@ fn normal_runs_keep_the_priority_they_inherited() {
     let env = Env::new("");
     let probe = ["-p", "require('os').getPriority()"];
     // Relative to this test's own priority, which may itself have been lowered.
-    let inherited = Command::new("node").args(probe).output().unwrap();
+    let inherited = common::hidden("node").args(probe).output().unwrap();
     let output = env.run(&["run", "--", "node", probe[0], probe[1]]);
     assert_eq!(output.stdout, inherited.stdout);
 }

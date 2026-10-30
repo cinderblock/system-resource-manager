@@ -1,0 +1,81 @@
+/* Roles, not colors, so light and dark swap in one place. Values and rules come from
+   the dataviz skill's reference palette. Status colors mean state and nothing else. */
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb;
+  --raised: #f4f3ef;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #6d6b66;
+  --grid: #e1e0d9;
+  --track: #dcdbd3;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --raised: #232322;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --track: #3a3a37;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: 13px/1.4 system-ui, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+h2 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.secondary {
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 11px;
+}
+
+.empty {
+  padding: 16px 0;
+  color: var(--muted);
+}
+
+code {
+  font: 12px ui-monospace, Consolas, monospace;
+}
+
+summary {
+  cursor: pointer;
+}

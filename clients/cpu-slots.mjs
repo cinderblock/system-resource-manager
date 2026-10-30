@@ -91,7 +91,7 @@ async function openOrStart() {
   try {
     return await open();
   } catch {
-    spawnSync(CTL, ["daemon", "start"], { stdio: "ignore" });
+    spawnSync(CTL, ["daemon", "start"], { stdio: "ignore", windowsHide: true });
     return await open();
   }
 }
@@ -242,6 +242,7 @@ export function describeWait(need, free, holders) {
 export function claims() {
   const { stdout, status } = spawnSync(CTL, ["status", "--json"], {
     encoding: "utf8",
+    windowsHide: true,
   });
   if (status !== 0) return [];
   const pool = JSON.parse(stdout).local.pools.find((p) => p.name === "cpu");
@@ -259,15 +260,16 @@ function runUnbudgeted(argv) {
   console.error(`cpu-slots: ${CTL} is missing — running unbudgeted`);
   // Unshelled first: `shell: true` on Windows joins argv without escaping. `.cmd`
   // launchers can't start without a shell, and those are bare names like `npx`.
-  let result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  const options = { stdio: "inherit", windowsHide: true };
+  let result = spawnSync(rest[0], rest.slice(1), options);
   if (result.error && WINDOWS) {
-    result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit", shell: true });
+    result = spawnSync(rest[0], rest.slice(1), { ...options, shell: true });
   }
   return result.status ?? 127;
 }
 
 function main(argv) {
-  const result = spawnSync(CTL, argv, { stdio: "inherit" });
+  const result = spawnSync(CTL, argv, { stdio: "inherit", windowsHide: true });
   if (!result.error) return result.status ?? 1;
   if (argv[0] === "run") return runUnbudgeted(argv);
   console.error(`cpu-slots: ${CTL} is missing`);

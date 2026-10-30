@@ -28,7 +28,8 @@ process.env.SRM_HOME = home;
 process.env.SRM_ENDPOINT = endpoint;
 const broker = await import(pathToFileURL(shim).href);
 
-const ctl = (...args) => spawnSync(join(home, "bin", `srmctl${exe}`), args, { env, encoding: "utf8" });
+const ctl = (...args) =>
+  spawnSync(join(home, "bin", `srmctl${exe}`), args, { env, encoding: "utf8", windowsHide: true });
 const status = () => JSON.parse(ctl("status", "--json").stdout).local.pools[0];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -56,7 +57,7 @@ after(() => {
       rmSync(home, { recursive: true });
       return;
     } catch {
-      spawnSync("node", ["-e", "setTimeout(()=>{},50)"]);
+      spawnSync("node", ["-e", "setTimeout(()=>{},50)"], { windowsHide: true });
     }
   }
 });
@@ -126,7 +127,10 @@ test("a held lease doesn't keep the process alive, and ends with it", async () =
     await acquire(1, "exiter");
     console.log("held");
   `;
-  const child = spawn(process.execPath, ["--input-type=module", "-e", code], { env });
+  const child = spawn(process.execPath, ["--input-type=module", "-e", code], {
+    env,
+    windowsHide: true,
+  });
   const exited = new Promise((resolve) => child.on("exit", resolve));
   const result = await Promise.race([exited, sleep(10_000).then(() => "hung")]);
   assert.equal(result, 0);
@@ -147,13 +151,17 @@ test("the CLI passes through exit codes, as t3code's launcher needs", () => {
   const run = spawnSync(
     process.execPath,
     [shim, "run", "--slots", "1", "--low", "--label", "x", "--", "node", "-e", "process.exit(9)"],
-    { env },
+    { env, windowsHide: true },
   );
   assert.equal(run.status, 9);
 });
 
 test("the CLI shows status", () => {
-  const run = spawnSync(process.execPath, [shim, "status"], { env, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [shim, "status"], {
+    env,
+    encoding: "utf8",
+    windowsHide: true,
+  });
   assert.equal(run.status, 0);
   assert.match(run.stdout, /cpu: 0\/3 in use/);
 });
@@ -164,7 +172,7 @@ test("with nothing installed, commands still run", () => {
   const run = spawnSync(
     process.execPath,
     [shim, "run", "--slots", "1", "--", "node", "-e", "process.exit(4)"],
-    { env: missing, encoding: "utf8" },
+    { env: missing, encoding: "utf8", windowsHide: true },
   );
   assert.equal(run.status, 4);
   assert.match(run.stderr, /running unbudgeted/);
@@ -182,6 +190,7 @@ test("with nothing installed, acquire is a no-op rather than an error", async ()
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
     env: { ...process.env, SRM_HOME: bare, SRM_ENDPOINT: windows ? "\\\\.\\pipe\\srmd-none" : join(bare, "none") },
     encoding: "utf8",
+    windowsHide: true,
   });
   assert.equal(run.status, 0, run.stderr);
   assert.equal(run.stdout.trim(), "0");

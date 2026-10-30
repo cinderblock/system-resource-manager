@@ -93,18 +93,6 @@ async fn run_sampler(shared: Arc<Shared>) {
     let mut unbrokered = Some(UnbrokeredTracker::default());
     let mut last = Instant::now();
     loop {
-        let interval = if shared.is_idle() {
-            IDLE_INTERVAL
-        } else {
-            ACTIVE_INTERVAL
-        };
-        tokio::select! {
-            _ = tokio::time::sleep(interval) => {}
-            _ = shared.activity.notified() => {
-                tokio::time::sleep(MIN_INTERVAL).await;
-            }
-        }
-
         let elapsed = last.elapsed().as_secs_f64();
         last = Instant::now();
         let mut owned = sampler.take().expect("sampler is returned below");
@@ -126,6 +114,18 @@ async fn run_sampler(shared: Arc<Shared>) {
             Err(e) => {
                 tracing::error!("sampler stopped: {e}");
                 return;
+            }
+        }
+
+        let interval = if shared.is_idle() {
+            IDLE_INTERVAL
+        } else {
+            ACTIVE_INTERVAL
+        };
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = shared.activity.notified() => {
+                tokio::time::sleep(MIN_INTERVAL).await;
             }
         }
     }
