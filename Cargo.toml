@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/srmd", "crates/srmctl"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Cameron Tacklind <cameron@tacklind.com>"]
+license = "MIT"
