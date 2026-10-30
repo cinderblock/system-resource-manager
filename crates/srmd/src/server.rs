@@ -161,6 +161,7 @@ async fn handle(
             receiver.mark_changed();
             *subscription = Some(receiver);
             shared.activity.notify_one();
+            shared.watcher_arrived.notify_waiters();
             return None;
         }
         Request::History { limit } => {

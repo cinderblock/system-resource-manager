@@ -38,10 +38,14 @@ pub struct Shared {
     pub node: NodeInfo,
     pub history: History,
     pub fleet: watch::Sender<Arc<Fleet>>,
+    /// The latest config, for loops that read it each round.
+    pub config: watch::Sender<Config>,
     /// Wakes the publisher.
     pub changed: Notify,
     /// Wakes the sampler early, when work starts.
     pub activity: Notify,
+    /// Someone started watching, so stale peers and probes should refresh now.
+    pub watcher_arrived: Notify,
     pub shutdown: Notify,
 }
 
@@ -87,8 +91,10 @@ impl Shared {
             node,
             history,
             fleet,
+            config: watch::Sender::new(config.clone()),
             changed: Notify::new(),
             activity: Notify::new(),
+            watcher_arrived: Notify::new(),
             shutdown: Notify::new(),
         }
     }
@@ -197,7 +203,18 @@ impl Shared {
         let grants = state.broker.reconfigure(pools, grace, now_ms());
         deliver(&mut state, grants);
         drop(state);
+        self.config.send_replace(config.clone());
         self.touched();
+    }
+
+    pub fn set_peers(&self, peers: Vec<Peer>) {
+        self.lock().peers = peers;
+        self.changed.notify_one();
+    }
+
+    pub fn set_assets(&self, assets: Vec<Asset>) {
+        self.lock().assets = assets;
+        self.changed.notify_one();
     }
 
     /// Fold a process sample into the leases and the unbrokered list.

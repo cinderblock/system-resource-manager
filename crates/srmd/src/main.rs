@@ -6,6 +6,9 @@
 mod broker;
 mod history;
 mod listener;
+mod metrics;
+mod network;
+mod probe;
 mod sampler;
 mod server;
 mod state;
@@ -173,6 +176,7 @@ async fn run(home: std::path::PathBuf) -> Result<()> {
 
     tokio::spawn(run_sampler(shared.clone()));
     tokio::spawn(run_publisher(shared.clone()));
+    network::start(shared.clone(), &config, &home);
 
     loop {
         tokio::select! {
