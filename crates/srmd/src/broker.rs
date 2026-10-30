@@ -372,7 +372,10 @@ mod tests {
         // One slot is free and the big request can't use it yet: don't waste it.
         assert!(granted(&ask(&mut b, 1, 2_000)));
         let (_, grants) = b.release(running, 3_000);
-        assert!(grants.iter().all(|g| g.lease != big), "1 slot is still held");
+        assert!(
+            grants.iter().all(|g| g.lease != big),
+            "1 slot is still held"
+        );
     }
 
     #[test]
@@ -447,7 +450,10 @@ mod tests {
         b.adopt(request, None, 0, 0).unwrap();
         let pool = &b.snapshot()[0];
         assert_eq!(pool.used, 5);
-        assert!(!granted(&ask(&mut b, 1, 1)), "over budget: nothing else starts");
+        assert!(
+            !granted(&ask(&mut b, 1, 1)),
+            "over budget: nothing else starts"
+        );
     }
 
     #[test]

@@ -21,10 +21,44 @@ const UNBROKERED_MIN_STREAK: u32 = 2;
 /// Tools that are worth reporting when they run outside a lease. Interactive programs
 /// are absent on purpose: a browser or a game is the person using their machine.
 const BUILD_TOOLS: &[&str] = &[
-    "bazel", "bun", "c++", "cargo", "cc", "cc1", "cc1plus", "cl", "clang", "clang++", "cmake",
-    "deno", "dotnet", "esbuild", "ffmpeg", "g++", "gcc", "go", "gradle", "java", "ld", "lld",
-    "lld-link", "link", "make", "msbuild", "ninja", "node", "npm", "pnpm", "pytest", "python",
-    "python3", "rust-analyzer", "rustc", "tsc", "vite", "webpack",
+    "bazel",
+    "bun",
+    "c++",
+    "cargo",
+    "cc",
+    "cc1",
+    "cc1plus",
+    "cl",
+    "clang",
+    "clang++",
+    "cmake",
+    "deno",
+    "dotnet",
+    "esbuild",
+    "ffmpeg",
+    "g++",
+    "gcc",
+    "go",
+    "gradle",
+    "java",
+    "ld",
+    "lld",
+    "lld-link",
+    "link",
+    "make",
+    "msbuild",
+    "ninja",
+    "node",
+    "npm",
+    "pnpm",
+    "pytest",
+    "python",
+    "python3",
+    "rust-analyzer",
+    "rustc",
+    "tsc",
+    "vite",
+    "webpack",
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -218,7 +252,10 @@ impl UnbrokeredTracker {
 
         // The topmost tool of each tree, so `cargo` -> `rustc` -> `link` is one thing.
         let mut roots = HashSet::new();
-        for proc in procs.iter().filter(|p| is_tool(p) && !leased.contains(&p.pid)) {
+        for proc in procs
+            .iter()
+            .filter(|p| is_tool(p) && !leased.contains(&p.pid))
+        {
             let mut root = proc;
             let mut steps = 0;
             while let Some(parent) = root
@@ -226,7 +263,9 @@ impl UnbrokeredTracker {
                 .and_then(|pid| by_pid.get(&pid))
                 .map(|i| &procs[*i])
                 .filter(|parent| {
-                    is_tool(parent) && !leased.contains(&parent.pid) && parent.started <= root.started
+                    is_tool(parent)
+                        && !leased.contains(&parent.pid)
+                        && parent.started <= root.started
                 })
             {
                 root = parent;
@@ -311,16 +350,23 @@ mod tests {
     #[test]
     fn scripts_are_named_past_interpreter_flags() {
         let mut p = proc(1, None, "node", 0.0);
-        p.cmd = ["node", "--max-old-space-size=4096", r"C:\x\vite.js", "build"]
-            .map(String::from)
-            .to_vec();
+        p.cmd = [
+            "node",
+            "--max-old-space-size=4096",
+            r"C:\x\vite.js",
+            "build",
+        ]
+        .map(String::from)
+        .to_vec();
         assert_eq!(describe(&p), "node vite.js");
     }
 
     #[test]
     fn browser_workers_are_named_by_role() {
         let mut p = proc(1, None, "chrome", 0.0);
-        p.cmd = ["chrome", "--type=renderer", "--foo"].map(String::from).to_vec();
+        p.cmd = ["chrome", "--type=renderer", "--foo"]
+            .map(String::from)
+            .to_vec();
         assert_eq!(describe(&p), "chrome renderer");
     }
 
@@ -345,7 +391,10 @@ mod tests {
         // PID 3 "started" after its children: the real parent died and the number
         // came back as something unrelated.
         procs[2].started = 100;
-        assert_eq!(tree(3, &procs, &index_children(&procs), &pid_map(&procs)).len(), 1);
+        assert_eq!(
+            tree(3, &procs, &index_children(&procs), &pid_map(&procs)).len(),
+            1
+        );
     }
 
     #[test]

@@ -70,11 +70,7 @@ fn repo_of(cwd: Option<&str>) -> Option<String> {
 }
 
 impl Shared {
-    pub fn new(
-        config: &Config,
-        node: NodeInfo,
-        history: History,
-    ) -> Self {
+    pub fn new(config: &Config, node: NodeInfo, history: History) -> Self {
         let pools = config.pools(Sampler::physical_cores());
         let grace = config.broker.backfill_grace_secs as Millis * 1000;
         let (fleet, _) = watch::channel(Arc::new(Fleet::default()));
@@ -142,7 +138,9 @@ impl Shared {
     ) -> Result<Grant, String> {
         let repo = repo_of(request.cwd.as_deref());
         let mut state = self.lock();
-        let grant = state.broker.adopt(request, repo, requested_at, granted_at)?;
+        let grant = state
+            .broker
+            .adopt(request, repo, requested_at, granted_at)?;
         state.tracks.insert(grant.lease, Track::default());
         drop(state);
         self.touched();
@@ -165,7 +163,10 @@ impl Shared {
             let track = state.tracks.remove(&lease);
             let (finished, grants) = state.broker.release(lease, now);
             deliver(&mut state, grants);
-            let usage = finished.as_ref().and_then(|l| l.usage.clone()).unwrap_or_default();
+            let usage = finished
+                .as_ref()
+                .and_then(|l| l.usage.clone())
+                .unwrap_or_default();
             // The client's own total is exact; the integral is a fallback.
             let usage = match track {
                 Some(track) => Usage {
@@ -213,8 +214,7 @@ impl Shared {
         let mut leased = HashSet::new();
 
         let mut state = self.lock();
-        let holders: Vec<(LeaseId, u32)> =
-            state.broker.holders().map(|l| (l.id, l.pid)).collect();
+        let holders: Vec<(LeaseId, u32)> = state.broker.holders().map(|l| (l.id, l.pid)).collect();
 
         for (id, root) in holders {
             let track = state.tracks.entry(id).or_default();

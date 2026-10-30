@@ -148,12 +148,22 @@ async fn main() -> Result<()> {
     let home = config::home();
     std::fs::create_dir_all(&home).with_context(|| format!("creating {}", home.display()))?;
 
+    // Before anything that can fail: a daemon is started detached, so this log is the
+    // only place a failure can be seen.
+    init_logging(&home)?;
+    if let Err(e) = run(home).await {
+        tracing::error!("{e:#}");
+        return Err(e);
+    }
+    Ok(())
+}
+
+async fn run(home: std::path::PathBuf) -> Result<()> {
     let endpoint = config::endpoint();
     let Some(mut listener) = Listener::bind(&endpoint)? else {
         return Ok(()); // Someone else won the race to start, which is all we wanted.
     };
 
-    init_logging(&home)?;
     let config = Config::load()?;
     let node = node_info(&config, &home)?;
     tracing::info!(endpoint, name = node.name, "srmd {} starting", node.version);

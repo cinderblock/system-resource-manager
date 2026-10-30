@@ -116,7 +116,8 @@ mod imp {
                 return Ok(None);
             }
             let _ = std::fs::remove_file(endpoint);
-            let inner = UnixListener::bind(endpoint).with_context(|| format!("binding {endpoint}"))?;
+            let inner =
+                UnixListener::bind(endpoint).with_context(|| format!("binding {endpoint}"))?;
             Ok(Some(Self { inner, _lock: lock }))
         }
 

@@ -33,7 +33,9 @@ async fn next_grant(waiting: &mut Option<oneshot::Receiver<Grant>>) -> Option<Gr
     }
 }
 
-async fn next_snapshot(subscription: &mut Option<watch::Receiver<Arc<Fleet>>>) -> Option<Arc<Fleet>> {
+async fn next_snapshot(
+    subscription: &mut Option<watch::Receiver<Arc<Fleet>>>,
+) -> Option<Arc<Fleet>> {
     match subscription {
         Some(receiver) => receiver
             .changed()

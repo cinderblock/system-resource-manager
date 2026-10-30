@@ -59,12 +59,14 @@ impl Client {
         }
         spawn_daemon()?;
         let mut last = None;
-        for attempt in 0..60 {
+        // A healthy start takes milliseconds. Waiting long is only ever waiting for a
+        // daemon that isn't coming, and that delays the real work.
+        for _ in 0..60 {
             match Self::connect().await {
                 Ok(client) => return Ok(client),
                 Err(e) => last = Some(e),
             }
-            tokio::time::sleep(Duration::from_millis(25 + attempt * 5)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
         Err(anyhow!(
             "srmd did not come up at {}: {}",
