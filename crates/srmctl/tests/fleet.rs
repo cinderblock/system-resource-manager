@@ -43,9 +43,7 @@ fn node(port: u16, name: &str, extra: &str) -> Env {
 
 /// What a node with no network config looks like.
 fn watcher(extra: &str) -> Env {
-    Env::new(&format!(
-        "[network]\npoll_secs = 1\n{extra}\n"
-    ))
+    Env::new(&format!("[network]\npoll_secs = 1\n{extra}\n"))
 }
 
 fn peer_config(port: u16) -> String {
@@ -137,8 +135,14 @@ fn a_token_is_required_for_everything() {
     assert_eq!(get(port, "/v1/snapshot", &[]).0, 401);
     assert_eq!(get(port, "/metrics", &[]).0, 401);
     assert_eq!(get(port, "/v1/snapshot", &["X-Srm-Token: wrong"]).0, 401);
-    assert_eq!(get(port, "/v1/snapshot", &["X-Srm-Token: test-token"]).0, 200);
-    assert_eq!(get(port, "/metrics", &["Authorization: Bearer test-token"]).0, 200);
+    assert_eq!(
+        get(port, "/v1/snapshot", &["X-Srm-Token: test-token"]).0,
+        200
+    );
+    assert_eq!(
+        get(port, "/metrics", &["Authorization: Bearer test-token"]).0,
+        200
+    );
 }
 
 #[test]
@@ -163,7 +167,10 @@ fn metrics_describe_the_pools() {
     env.status();
     wait_served(port);
     let (_, body) = get(port, "/metrics", &["X-Srm-Token: test-token"]);
-    assert!(body.contains(r#"srm_pool_capacity{pool="cpu"} 2"#), "{body}");
+    assert!(
+        body.contains(r#"srm_pool_capacity{pool="cpu"} 2"#),
+        "{body}"
+    );
     assert!(body.contains("srm_cpu_percent"), "{body}");
 }
 
@@ -171,7 +178,17 @@ fn metrics_describe_the_pools() {
 fn one_node_sees_the_work_on_another() {
     let port = free_port();
     let a = node(port, "alpha", "");
-    let mut build = a.start(&["run", "--slots", "2", "--label", "remote build", "--", "node", "-e", "setTimeout(()=>{},15000)"]);
+    let mut build = a.start(&[
+        "run",
+        "--slots",
+        "2",
+        "--label",
+        "remote build",
+        "--",
+        "node",
+        "-e",
+        "setTimeout(()=>{},15000)",
+    ]);
     a.wait_for_pool("the build", |p| p["used"] == 2);
     wait_served(port);
 
@@ -197,7 +214,11 @@ fn a_wrong_token_is_told_apart_from_a_dead_peer() {
         "[[peer]]\nurl = \"http://127.0.0.1:{port}\"\ntoken = \"wrong\"\n[[peer]]\nurl = \"http://127.0.0.1:{dead}\"\n"
     ));
     let status = b.wait_for("both peers", |s| {
-        s["peers"].as_array().unwrap().iter().all(|p| p["state"] != "online")
+        s["peers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["state"] != "online")
             && s["peers"].as_array().unwrap().len() == 2
     });
     let states: Vec<&str> = status["peers"]
@@ -275,7 +296,9 @@ fn tcp_probes_tell_up_from_down() {
         probe = {{ type = "tcp", host = "127.0.0.1", port = {closed} }}
         "#
     ));
-    let status = env.wait_for("both probes", |s| has_asset(s, "cam-up") && has_asset(s, "cam-down"));
+    let status = env.wait_for("both probes", |s| {
+        has_asset(s, "cam-up") && has_asset(s, "cam-down")
+    });
     let up = asset(&status, "cam-up");
     assert_eq!(up["health"], "up");
     assert_eq!(up["name"], "Warehouse camera");
@@ -360,7 +383,11 @@ fn an_asset_watched_from_two_nodes_appears_once_and_up_wins() {
         peer_config(beta_port)
     ));
     let status = alpha.wait_for("beta's view", |s| {
-        s["peers"][0]["state"] == "online" && !s["peers"][0]["snapshot"]["assets"].as_array().unwrap().is_empty()
+        s["peers"][0]["state"] == "online"
+            && !s["peers"][0]["snapshot"]["assets"]
+                .as_array()
+                .unwrap()
+                .is_empty()
     });
     assert_eq!(status["assets"].as_array().unwrap().len(), 1);
     assert_eq!(asset(&status, "nas")["health"], "up");
@@ -379,7 +406,9 @@ fn a_status_print_covers_the_whole_fleet() {
         "{}[[asset]]\nid = \"cam\"\nname = \"Front camera\"\nprobe = {{ type = \"tcp\", host = \"127.0.0.1\", port = {device_port} }}\n",
         peer_config(port)
     ));
-    b.wait_for("everything", |s| s["peers"][0]["state"] == "online" && has_asset(s, "cam"));
+    b.wait_for("everything", |s| {
+        s["peers"][0]["state"] == "online" && has_asset(s, "cam")
+    });
     let output = b
         .ctl()
         .args(["status"])

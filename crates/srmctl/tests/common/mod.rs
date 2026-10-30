@@ -2,7 +2,7 @@
 #![allow(dead_code)] // Each test binary uses its own subset.
 
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -106,4 +106,3 @@ impl Drop for Env {
         }
     }
 }
-

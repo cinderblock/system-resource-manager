@@ -152,6 +152,9 @@ mod tests {
         };
         assert_eq!(face.tooltip(33.4), "2 of 4 slots in use, CPU 33%");
         face.waiting = 3;
-        assert_eq!(face.tooltip(33.4), "2 of 4 slots in use, CPU 33%, 3 waiting");
+        assert_eq!(
+            face.tooltip(33.4),
+            "2 of 4 slots in use, CPU 33%, 3 waiting"
+        );
     }
 }

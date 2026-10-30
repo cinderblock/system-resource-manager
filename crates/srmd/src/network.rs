@@ -47,8 +47,7 @@ fn load_token(home: &Path, create: bool) -> Result<Option<String>> {
                 uuid::Uuid::new_v4().simple(),
                 uuid::Uuid::new_v4().simple()
             );
-            std::fs::write(&path, &token)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(&path, &token).with_context(|| format!("writing {}", path.display()))?;
             Ok(Some(token))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -97,7 +96,10 @@ async fn serve(shared: Arc<Shared>, addr: SocketAddr, token: String) -> Result<(
     let app = Router::new()
         .route("/v1/snapshot", get(snapshot))
         .route("/metrics", get(prometheus))
-        .layer(middleware::from_fn_with_state(Arc::new(token), require_token))
+        .layer(middleware::from_fn_with_state(
+            Arc::new(token),
+            require_token,
+        ))
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -206,17 +208,27 @@ fn targets(config: &Config, found: &Found, token: &Option<String>) -> Vec<Target
             basic_auth: peer.basic_auth.clone(),
         })
         .collect();
-    list.extend(found.lock().expect("discovery lock").iter().map(|(key, peer)| Target {
-        key: key.clone(),
-        urls: peer.urls.clone(),
-        source: PeerSource::Mdns,
-        token: token.clone(),
-        basic_auth: None,
-    }));
+    list.extend(
+        found
+            .lock()
+            .expect("discovery lock")
+            .iter()
+            .map(|(key, peer)| Target {
+                key: key.clone(),
+                urls: peer.urls.clone(),
+                source: PeerSource::Mdns,
+                token: token.clone(),
+                basic_auth: None,
+            }),
+    );
     list
 }
 
-async fn pull(http: &reqwest::Client, base: &str, target: &Target) -> Result<NodeSnapshot, (PeerState, String)> {
+async fn pull(
+    http: &reqwest::Client,
+    base: &str,
+    target: &Target,
+) -> Result<NodeSnapshot, (PeerState, String)> {
     let mut request = http.get(format!("{}/v1/snapshot", base.trim_end_matches('/')));
     if let Some(token) = &target.token {
         request = request.header(TOKEN_HEADER, token);
@@ -322,7 +334,11 @@ async fn run_peers(shared: Arc<Shared>, found: Found, token: Option<String>) -> 
         }
         known = current;
         shared.set_peers(deduplicate(known.values().cloned().collect(), &own_id));
-        wait_for_next_round(&shared, Duration::from_secs(config.network.poll_secs.max(1))).await;
+        wait_for_next_round(
+            &shared,
+            Duration::from_secs(config.network.poll_secs.max(1)),
+        )
+        .await;
     }
 }
 
@@ -344,7 +360,11 @@ async fn run_probes(shared: Arc<Shared>) -> Result<()> {
         }
         assets.sort_by(|a, b| a.id.cmp(&b.id));
         shared.set_assets(assets);
-        wait_for_next_round(&shared, Duration::from_secs(config.network.poll_secs.max(1))).await;
+        wait_for_next_round(
+            &shared,
+            Duration::from_secs(config.network.poll_secs.max(1)),
+        )
+        .await;
     }
 }
 
@@ -497,7 +517,10 @@ mod tests {
         for _ in 0..100 {
             std::thread::sleep(Duration::from_millis(100));
             let found = found.lock().unwrap();
-            if let Some(entry) = found.values().find(|d| d.id.as_deref() == Some("the-other-node")) {
+            if let Some(entry) = found
+                .values()
+                .find(|d| d.id.as_deref() == Some("the-other-node"))
+            {
                 assert!(!entry.urls.is_empty());
                 assert!(entry.urls[0].ends_with(":17654"), "{:?}", entry.urls);
                 let _ = announcer.shutdown();

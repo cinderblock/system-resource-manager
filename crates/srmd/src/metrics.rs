@@ -55,7 +55,10 @@ pub fn node_exporter_gauges(
     };
 
     let mut totals = CpuTotals::default();
-    for sample in samples.iter().filter(|s| s.name == "node_cpu_seconds_total") {
+    for sample in samples
+        .iter()
+        .filter(|s| s.name == "node_cpu_seconds_total")
+    {
         totals.all += sample.value;
         if sample.labels.contains(r#"mode="idle""#) {
             totals.idle += sample.value;
@@ -74,7 +77,10 @@ pub fn node_exporter_gauges(
         one("node_memory_MemTotal_bytes", ""),
     ) {
         if total > 0.0 {
-            gauges.insert("memory_percent".to_string(), (1.0 - available / total) * 100.0);
+            gauges.insert(
+                "memory_percent".to_string(),
+                (1.0 - available / total) * 100.0,
+            );
         }
     }
 
@@ -91,7 +97,10 @@ pub fn node_exporter_gauges(
     if let Some(load) = one("node_load1", "") {
         gauges.insert("load1".to_string(), load);
     }
-    if let (Some(now), Some(boot)) = (one("node_time_seconds", ""), one("node_boot_time_seconds", "")) {
+    if let (Some(now), Some(boot)) = (
+        one("node_time_seconds", ""),
+        one("node_boot_time_seconds", ""),
+    ) {
         gauges.insert("uptime_seconds".to_string(), now - boot);
     }
     (gauges, totals)
@@ -122,9 +131,17 @@ pub fn expose(snapshot: &NodeSnapshot) -> String {
             .filter_map(|l| l.usage.as_ref())
             .map(|u| u.cores)
             .sum();
-        let _ = writeln!(out, "srm_pool_capacity{{pool=\"{name}\"}} {}", pool.capacity);
+        let _ = writeln!(
+            out,
+            "srm_pool_capacity{{pool=\"{name}\"}} {}",
+            pool.capacity
+        );
         let _ = writeln!(out, "srm_pool_used{{pool=\"{name}\"}} {}", pool.used);
-        let _ = writeln!(out, "srm_pool_waiting{{pool=\"{name}\"}} {}", pool.waiters.len());
+        let _ = writeln!(
+            out,
+            "srm_pool_waiting{{pool=\"{name}\"}} {}",
+            pool.waiters.len()
+        );
         let _ = writeln!(out, "srm_pool_cores{{pool=\"{name}\"}} {cores}");
     }
     out
@@ -170,10 +187,19 @@ node_time_seconds 4600
     fn a_scrape_gives_gauges() {
         let (gauges, totals) = node_exporter_gauges(&parse(SCRAPE), None);
         assert_eq!(gauges["memory_percent"], 75.0);
-        assert_eq!(gauges["disk_percent"], 75.0, "the root filesystem, not /data");
+        assert_eq!(
+            gauges["disk_percent"], 75.0,
+            "the root filesystem, not /data"
+        );
         assert_eq!(gauges["load1"], 1.5);
         assert_eq!(gauges["uptime_seconds"], 3600.0);
-        assert_eq!(totals, CpuTotals { idle: 200.0, all: 300.0 });
+        assert_eq!(
+            totals,
+            CpuTotals {
+                idle: 200.0,
+                all: 300.0
+            }
+        );
     }
 
     #[test]
@@ -181,7 +207,10 @@ node_time_seconds 4600
         let (gauges, _) = node_exporter_gauges(&parse(SCRAPE), None);
         assert!(!gauges.contains_key("cpu_percent"));
 
-        let before = CpuTotals { idle: 150.0, all: 200.0 };
+        let before = CpuTotals {
+            idle: 150.0,
+            all: 200.0,
+        };
         let (gauges, _) = node_exporter_gauges(&parse(SCRAPE), Some(before));
         assert_eq!(gauges["cpu_percent"], 50.0);
     }
@@ -199,7 +228,10 @@ node_time_seconds 4600
             ..Default::default()
         };
         let text = expose(&snapshot);
-        assert!(text.contains(r#"srm_pool_capacity{pool="a\"b"} 4"#), "{text}");
+        assert!(
+            text.contains(r#"srm_pool_capacity{pool="a\"b"} 4"#),
+            "{text}"
+        );
         assert_eq!(parse(&text).len(), 8);
     }
 }

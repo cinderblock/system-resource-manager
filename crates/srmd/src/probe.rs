@@ -52,10 +52,16 @@ impl Reading {
 /// Whether a reachable machine still needs looking at.
 fn assess(metrics: &BTreeMap<String, f64>) -> Option<String> {
     let mut problems = Vec::new();
-    if metrics.get("disk_percent").is_some_and(|v| *v >= DISK_WARN_PERCENT) {
+    if metrics
+        .get("disk_percent")
+        .is_some_and(|v| *v >= DISK_WARN_PERCENT)
+    {
         problems.push(format!("disk {:.0}% full", metrics["disk_percent"]));
     }
-    if metrics.get("memory_percent").is_some_and(|v| *v >= MEMORY_WARN_PERCENT) {
+    if metrics
+        .get("memory_percent")
+        .is_some_and(|v| *v >= MEMORY_WARN_PERCENT)
+    {
         problems.push(format!("memory {:.0}% used", metrics["memory_percent"]));
     }
     (!problems.is_empty()).then(|| problems.join(", "))

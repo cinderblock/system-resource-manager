@@ -90,7 +90,14 @@ fn toggle(app: &AppHandle) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
-    let login = CheckMenuItem::with_id(app, "login", "Start at login", true, autostart, None::<&str>)?;
+    let login = CheckMenuItem::with_id(
+        app,
+        "login",
+        "Start at login",
+        true,
+        autostart,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(
         app,
         &[
