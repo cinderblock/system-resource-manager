@@ -198,11 +198,22 @@ pub fn tree(
     children: &HashMap<u32, Vec<usize>>,
     by_pid: &HashMap<u32, usize>,
 ) -> Vec<usize> {
+    tree_until(root, &HashSet::new(), procs, children, by_pid)
+}
+
+/// The same, without going past any process in `stop`.
+fn tree_until(
+    root: u32,
+    stop: &HashSet<u32>,
+    procs: &[Proc],
+    children: &HashMap<u32, Vec<usize>>,
+    by_pid: &HashMap<u32, usize>,
+) -> Vec<usize> {
     let mut found = Vec::new();
     let mut stack = vec![root];
     let mut seen = HashSet::new();
     while let Some(pid) = stack.pop() {
-        if !seen.insert(pid) {
+        if stop.contains(&pid) || !seen.insert(pid) {
             continue;
         }
         if let Some(i) = by_pid.get(&pid) {
@@ -279,8 +290,12 @@ impl UnbrokeredTracker {
 
         let mut groups = Vec::new();
         let mut streaks = HashMap::new();
-        for root in roots {
-            let members: Vec<usize> = tree(root, procs, &children, &by_pid)
+        for root in &roots {
+            let root = *root;
+            // Each root keeps what's below it up to the next root, so a long-lived host
+            // isn't credited with the separate builds its children started.
+            let others: HashSet<u32> = roots.iter().copied().filter(|r| *r != root).collect();
+            let members: Vec<usize> = tree_until(root, &others, procs, &children, &by_pid)
                 .into_iter()
                 .filter(|i| !leased.contains(&procs[*i].pid))
                 .collect();
@@ -406,6 +421,23 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].root_pid, 3);
         assert_eq!(groups[0].processes, 4);
+    }
+
+    #[test]
+    fn a_host_isnt_credited_with_builds_started_below_it() {
+        // An agent host running `node`, a shell, and a build under that shell.
+        let procs = vec![
+            proc(1, None, "node", 0.1),
+            proc(2, Some(1), "bash", 0.0),
+            proc(3, Some(2), "cargo", 2.0),
+            proc(4, Some(3), "rustc", 2.0),
+        ];
+        let mut tracker = UnbrokeredTracker::default();
+        tracker.update(&procs, &HashSet::new());
+        let groups = tracker.update(&procs, &HashSet::new());
+        assert_eq!(groups.len(), 1, "the host is quiet by itself: {groups:?}");
+        assert_eq!(groups[0].root_pid, 3);
+        assert_eq!(groups[0].cores, 4.0);
     }
 
     #[test]

@@ -143,7 +143,7 @@ Answered 2026-10-30:
 5. [x] Sampler, unbrokered detection, history.
 6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
 7. [ ] Tauri tray app: release build installed; needs a first real run. <- **current**
-8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:15 PM PDT, 21:15Z).
+8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:10 PM PDT, 21:10Z).
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
 machine to anything is a separate per-change authorization. See Things not to do.
@@ -175,6 +175,30 @@ machine to anything is a separate per-change authorization. See Things not to do
   `$lib`, and it needs TypeScript 6 (TypeScript 7 has no JS API).
 - A daemon started through a pipe would inherit that pipe and hang the reader forever. See
   `std_handles` in `crates/proto/src/client.rs`.
+
+- **Allowing job breakaway was a mistake.** `JOB_OBJECT_LIMIT_BREAKAWAY_OK` was set for `sccache`,
+  but Cygwin/MSYS `spawn` adds `CREATE_BREAKAWAY_FROM_JOB` whenever the job permits it. So
+  `srmctl run -- bash -c "cargo ..."` lost `--low` and its accounting, and showed 0.0 cores for 4
+  slots while its `cargo` sat under "outside the budget". Loopback tests couldn't show this, because
+  they run `node` directly. Breakaway is now forbidden, and the daemon also unions the reported
+  list with the tree walk.
+- A release-profile `srm-tray` takes about 22 minutes at 2 slots on a loaded machine. `srmd` and
+  `srmctl` alone are far quicker, so rebuild only what changed.
+
+- **The daemon must inherit nothing.** `CreateProcess` with inheritance on passes every inheritable
+  handle in the process, not only the three standard ones. Clearing the flag on our own standard
+  handles wasn't enough: shell -> node -> `srmctl` -> `srmd` carries the shell's pipe as a plain
+  inherited handle, and the daemon then keeps it open for life, hanging whatever reads it. Seen as a
+  test run stuck 30 minutes after finishing; a watchdog named `target\\debug\\srmd.exe` as the holder.
+  `spawn_daemon` now calls `CreateProcessW` with `bInheritHandles = FALSE`.
+- **Reconnecting clients must not start a daemon.** It undoes `srmctl daemon stop`, which is how
+  that test's daemon outlived its test.
+- CPU rate has to be measured across the client's own reports. Measured against the sampler's
+  clock, a tick landing between two 2-second reports read as 0.0 cores.
+
+- **Losing the daemon while queued must not mean "no broker".** Clients did that, so a restart
+  released the whole queue at once. Queued clients now rejoin, 3 s later so running work is
+  counted first. Found by thinking through a reinstall under load rather than by a test.
 
 ## Progress log
 

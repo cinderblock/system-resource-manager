@@ -109,37 +109,75 @@ fn daemon_path() -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Started by hand rather than with `Command`, because `Command` always asks for handle
+/// inheritance, and `CreateProcess` then passes on *every* inheritable handle in the
+/// process, not only the three it's given. A pipe reaches us that way without being our
+/// stdout at all: a shell's pipe goes to node as stdout and on to us as a plain inherited
+/// handle. Handing it to the daemon keeps it open for the daemon's whole life, so whatever
+/// is reading that pipe (an agent's shell tool, say) waits forever for an end of file.
 #[cfg(windows)]
 fn spawn_daemon() -> Result<()> {
-    use std::os::windows::process::CommandExt;
-
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        CreateProcessW, CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS,
+        PROCESS_INFORMATION, STARTUPINFOW,
+    };
 
     let path = daemon_path();
-    let start = |flags: u32| {
-        let mut command = std::process::Command::new(&path);
-        command
-            .creation_flags(flags)
-            // A working directory is a lock on Windows. The daemon outlives whoever
-            // started it, and must not stop a worktree from being deleted.
-            .current_dir(startup_dir())
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        std_handles::without_inheritance(|| command.spawn())
+    let directory: Vec<u16> = startup_dir()
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+
+    let start = |flags: u32| -> std::io::Result<()> {
+        let mut command: Vec<u16> = "\""
+            .encode_utf16()
+            .chain(path.as_os_str().encode_wide())
+            .chain("\"".encode_utf16())
+            .chain(Some(0))
+            .collect();
+        // SAFETY: all-zero is valid for both structs once `cb` is set.
+        let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
+        startup.cb = size_of::<STARTUPINFOW>() as u32;
+        let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: the strings are NUL-terminated and outlive the call, the command buffer
+        // is writable as the API requires, and the out-struct is valid. Both returned
+        // handles are closed below.
+        let ok = unsafe {
+            CreateProcessW(
+                null(),
+                command.as_mut_ptr(),
+                null(),
+                null(),
+                0, // bInheritHandles: the point of doing this by hand.
+                flags,
+                null(),
+                directory.as_ptr(),
+                &startup,
+                &mut process,
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: both are valid after a successful create, and aren't used again.
+        unsafe {
+            CloseHandle(process.hThread);
+            CloseHandle(process.hProcess);
+        }
+        Ok(())
     };
 
     let base = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
-    // Agents run inside job objects that kill everything when they end, and the
-    // daemon must survive the session that happened to start it. Breakaway is
-    // refused if the job forbids it, and then being inside the job is still better
-    // than not running.
+    // Agents run inside job objects that kill everything when they end, and the daemon
+    // must survive the session that happened to start it. Breakaway is refused if the job
+    // forbids it, and then being inside the job is still better than not running.
     start(base | CREATE_BREAKAWAY_FROM_JOB)
         .or_else(|_| start(base))
-        .with_context(|| format!("starting {}", path.display()))?;
-    Ok(())
+        .with_context(|| format!("starting {}", path.display()))
 }
 
 #[cfg(unix)]
@@ -158,56 +196,10 @@ fn spawn_daemon() -> Result<()> {
     Ok(())
 }
 
+/// A working directory is a lock on Windows. The daemon outlives whoever started it, and
+/// must not stop a worktree from being deleted.
 fn startup_dir() -> PathBuf {
     let home = config::home();
     let _ = std::fs::create_dir_all(&home);
     home
-}
-
-#[cfg(windows)]
-mod std_handles {
-    //! `CreateProcess` inherits *every* inheritable handle, not only the three it is
-    //! given. So a daemon started from a piped shell keeps that pipe's write end open
-    //! for as long as it lives, and whatever is reading the pipe (an agent's shell
-    //! tool, say) waits forever for an end-of-file that never comes. Our standard
-    //! handles are the inheritable ones in practice, so hide them for the moment of
-    //! the spawn.
-
-    type Handle = *mut core::ffi::c_void;
-    const HANDLE_FLAG_INHERIT: u32 = 1;
-    const STD_HANDLES: [u32; 3] = [-10i32 as u32, -11i32 as u32, -12i32 as u32];
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetStdHandle(which: u32) -> Handle;
-        fn GetHandleInformation(handle: Handle, flags: *mut u32) -> i32;
-        fn SetHandleInformation(handle: Handle, mask: u32, flags: u32) -> i32;
-    }
-
-    pub fn without_inheritance<T>(spawn: impl FnOnce() -> T) -> T {
-        let mut restore = Vec::new();
-        for which in STD_HANDLES {
-            // SAFETY: querying and flagging our own standard handles, which stay
-            // open for the life of the process. A null or invalid handle just makes
-            // these calls fail, and that case is skipped.
-            unsafe {
-                let handle = GetStdHandle(which);
-                let mut flags = 0;
-                if GetHandleInformation(handle, &mut flags) != 0
-                    && flags & HANDLE_FLAG_INHERIT != 0
-                    && SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) != 0
-                {
-                    restore.push(handle);
-                }
-            }
-        }
-        let result = spawn();
-        for handle in restore {
-            // SAFETY: as above; these handles were flagged a moment ago.
-            unsafe {
-                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-            }
-        }
-        result
-    }
 }

@@ -56,6 +56,8 @@ const CONFIG = join(HOME, "config.toml");
 
 /** How often to look for a daemon again after losing one mid-lease. */
 const RECONNECT_MS = 2000;
+/** Longer than RECONNECT_MS, so running work gets back in first. */
+const REJOIN_DELAY_MS = 3000;
 
 /** What the daemon last said, which beats reading the config. */
 let knownCapacity;
@@ -131,6 +133,33 @@ function holderView(lease) {
 }
 
 /**
+ * Resolves with the grant, or `null` if the connection dropped first. Losing the daemon
+ * while queued isn't the same as having no broker: treating it that way would run every
+ * queued command the moment the daemon restarts, the exact pile-up this exists to stop.
+ */
+function waitInLine(socket, request, onWait) {
+  return new Promise((resolve, reject) => {
+    socket.once("error", () => resolve(null));
+    socket.once("close", () => resolve(null));
+    listen(socket, (message) => {
+      if (message.type === "queued") {
+        knownCapacity = message.capacity;
+        onWait?.(message.amount, message.free, message.holders.map(holderView));
+      } else if (message.type === "granted") {
+        knownCapacity = message.capacity;
+        resolve({ grantedAt: message.granted_at, waitedMs: message.waited_ms });
+        return true;
+      } else if (message.type === "error") {
+        reject(new Error(message.message));
+        return true;
+      }
+      return false;
+    });
+    send(socket, { type: "acquire", ...request });
+  });
+}
+
+/**
  * Claim `want` slots, waiting until they're free. Returns a release function, with
  * `.waitedMs` on it.
  *
@@ -148,40 +177,27 @@ export async function acquire(want, label, { onWait } = {}) {
   const requestedAt = Date.now();
 
   let socket;
-  try {
-    socket = await openOrStart();
-  } catch {
-    console.warn(`cpu-slots: no broker at ${ENDPOINT} — running unbudgeted.`);
-    return Object.assign(() => {}, { waitedMs: 0 });
-  }
-
   let grantedAt;
-  const waitedMs = await new Promise((resolve, reject) => {
-    socket.once("error", reject);
-    socket.once("close", () => reject(new Error("srmd went away")));
-    listen(socket, (message) => {
-      if (message.type === "queued") {
-        knownCapacity = message.capacity;
-        onWait?.(message.amount, message.free, message.holders.map(holderView));
-      } else if (message.type === "granted") {
-        knownCapacity = message.capacity;
-        grantedAt = message.granted_at;
-        resolve(message.waited_ms);
-        return true;
-      } else if (message.type === "error") {
-        reject(new Error(message.message));
-      }
-      return false;
-    });
-    send(socket, { type: "acquire", ...request });
-  }).catch((e) => {
-    console.warn(`cpu-slots: ${e.message} — running unbudgeted.`);
-    return null;
-  });
+  let waitedMs;
+  for (let rejoining = false; waitedMs === undefined; rejoining = true) {
+    try {
+      socket = await openOrStart();
+    } catch {
+      console.warn(`cpu-slots: no broker at ${ENDPOINT} — running unbudgeted.`);
+      return Object.assign(() => {}, { waitedMs: 0 });
+    }
+    // Work that was already running is on its way back. Let it be counted first, or
+    // this would see an empty pool and start on top of it.
+    if (rejoining) await new Promise((resolve) => setTimeout(resolve, REJOIN_DELAY_MS));
 
-  if (waitedMs === null) {
-    socket.destroy();
-    return Object.assign(() => {}, { waitedMs: 0 });
+    try {
+      const granted = await waitInLine(socket, request, onWait);
+      if (granted) ({ grantedAt, waitedMs } = granted);
+    } catch (e) {
+      console.warn(`cpu-slots: ${e.message} — running unbudgeted.`);
+      socket.destroy();
+      return Object.assign(() => {}, { waitedMs: 0 });
+    }
   }
 
   let released = false;
@@ -204,7 +220,8 @@ export async function acquire(want, label, { onWait } = {}) {
   const rejoin = async () => {
     if (released) return;
     try {
-      const fresh = await openOrStart();
+      // Only ever connect. Starting one here would undo `srmctl daemon stop`.
+      const fresh = await open();
       if (released) return fresh.destroy();
       send(fresh, {
         type: "adopt",

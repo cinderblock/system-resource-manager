@@ -60,7 +60,8 @@ request can't starve, and slots don't sit idle during short waits.
 **`srmctl run` wraps the command in a Windows Job Object.** Its priority limit reaches every process
 in the tree, with no race against the ones started in the first milliseconds. It also gives an exact
 process list and a CPU total that includes processes that have already exited, which a sampler can't
-see, and short-lived compilers are most of a build. `srmctl history` compares this with what was
+see, and short-lived compilers are most of a build. Nothing can leave the job: Cygwin and MSYS break
+their children out of any job that permits it, which would lose everything run through `bash -c`. `srmctl history` compares this with what was
 claimed, so wrong slot counts are visible.
 
 **Work outside the budget shows up anyway.** The sampler spots build tools staying busy outside any

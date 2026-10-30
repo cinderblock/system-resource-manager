@@ -8,7 +8,11 @@ use srm_proto::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::sync::{oneshot, watch, Notify};
+
+/// Shorter than this, and a final report at exit would give a meaningless spike.
+const MIN_RATE_WINDOW_SECS: f64 = 0.5;
 
 /// What the sampler knows about a held lease, beyond what clients see.
 #[derive(Default)]
@@ -16,8 +20,10 @@ pub struct Track {
     /// From the client, when it can see its own processes exactly.
     reported_pids: Vec<u32>,
     reported_cpu: Option<f64>,
-    /// `reported_cpu` as of the previous sample, to turn it into a rate.
-    last_cpu: Option<f64>,
+    /// Where the current rate is being measured from.
+    rate_base: Option<(Instant, f64)>,
+    /// Cores, between the client's last two reports.
+    reported_rate: Option<f32>,
     integrated_cpu: f64,
     peak_cores: f32,
     peak_rss: u64,
@@ -155,6 +161,18 @@ impl Shared {
 
     pub fn report(&self, lease: LeaseId, pids: Vec<u32>, cpu_seconds: f64) {
         if let Some(track) = self.lock().tracks.get_mut(&lease) {
+            let now = Instant::now();
+            match track.rate_base {
+                None => track.rate_base = Some((now, cpu_seconds)),
+                Some((at, base)) => {
+                    let elapsed = now.duration_since(at).as_secs_f64();
+                    if elapsed >= MIN_RATE_WINDOW_SECS {
+                        track.reported_rate =
+                            Some(((cpu_seconds - base) / elapsed).max(0.0) as f32);
+                        track.rate_base = Some((now, cpu_seconds));
+                    }
+                }
+            }
             track.reported_pids = pids;
             track.reported_cpu = Some(cpu_seconds);
         }
@@ -235,30 +253,25 @@ impl Shared {
 
         for (id, root) in holders {
             let track = state.tracks.entry(id).or_default();
-            let members: Vec<usize> = if track.reported_pids.is_empty() {
-                sampler::tree(root, procs, &children, &by_pid)
-            } else {
-                // The wrapper itself is part of the claim's footprint, if a small one.
-                let mut members: Vec<usize> = track
+            // The tree as well as the reported list: a client's job can't hold anything
+            // that left it, and a tree can't see past a parent that has exited.
+            let mut members = sampler::tree(root, procs, &children, &by_pid);
+            members.extend(
+                track
                     .reported_pids
                     .iter()
-                    .filter_map(|pid| by_pid.get(pid).copied())
-                    .collect();
-                members.extend(by_pid.get(&root));
-                members
-            };
+                    .filter_map(|pid| by_pid.get(pid).copied()),
+            );
+            members.sort_unstable();
+            members.dedup();
             leased.extend(members.iter().map(|i| procs[*i].pid));
             let (sampled, rss_bytes, top) = sampler::summarize(&members, procs);
 
             // A job's counter includes processes that lived and died between samples,
-            // which a sum over the running ones can't see.
-            let cores = match (track.reported_cpu, track.last_cpu) {
-                (Some(now), Some(before)) if elapsed_secs > 0.0 => {
-                    ((now - before) / elapsed_secs) as f32
-                }
-                _ => sampled,
-            };
-            track.last_cpu = track.reported_cpu;
+            // which a sum over the running ones can't see. Measured across the client's
+            // own reports: against the sampler's clock, a tick landing between two reports
+            // would read as nothing at all.
+            let cores = track.reported_rate.unwrap_or(sampled);
             track.integrated_cpu += cores as f64 * elapsed_secs;
             track.peak_cores = track.peak_cores.max(cores);
             track.peak_rss = track.peak_rss.max(rss_bytes);

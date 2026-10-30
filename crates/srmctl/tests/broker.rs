@@ -46,6 +46,57 @@ fn starting_the_daemon_doesnt_hold_our_pipes_open() {
 }
 
 #[test]
+fn a_daemon_started_through_a_chain_of_processes_holds_no_pipes() {
+    // Our pipe reaches node as stdout and srmctl as a plain inherited handle, even though
+    // srmctl's own stdio is ignored. That's the real path: a shell tool, the JavaScript
+    // shim, srmctl, srmd. If the daemon inherits it, this never reaches end of file.
+    let env = Env::new("");
+    let ctl = env!("CARGO_BIN_EXE_srmctl").replace('\\', "/");
+    let script = format!(
+        r#"require("child_process").spawnSync("{ctl}", ["daemon", "start"], {{ stdio: "ignore", windowsHide: true }}); console.log("started")"#
+    );
+    let mut child = common::hidden("node")
+        .args(["-e", &script])
+        .env("SRM_HOME", &env.home)
+        .env("SRM_ENDPOINT", &env.endpoint)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut stdout, &mut text).unwrap();
+        text
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !reader.is_finished() {
+        assert!(Instant::now() < deadline, "the daemon is holding our pipe");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(reader.join().unwrap().trim(), "started");
+    child.wait().unwrap();
+    env.status();
+}
+
+#[test]
+fn stopping_the_daemon_sticks_while_work_is_running() {
+    let env = Env::new(&capacity(2));
+    let mut holder = env.start(&["run", "--slots", "1", "--", "node", "-e", SLEEP]);
+    env.wait_for_pool("the holder", |p| p["used"] == 1);
+
+    env.run(&["daemon", "stop"]);
+    std::thread::sleep(Duration::from_secs(4));
+
+    let output = env.run(&["daemon", "status"]);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "not running"
+    );
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+}
+
+#[test]
 fn the_exit_code_comes_through() {
     let env = Env::new("");
     let output = env.run(&["run", "--", "node", "-e", "process.exit(7)"]);
@@ -130,9 +181,11 @@ fn killing_a_holder_frees_its_slots_at_once() {
     holder.kill().unwrap();
     holder.wait().unwrap();
 
+    // Bounded by how long `status` takes on a busy machine, not by any polling: the
+    // daemon hears the connection close.
     let killed_at = Instant::now();
     env.wait_for_pool("the slot back", |p| p["used"] == 0);
-    assert!(killed_at.elapsed() < Duration::from_secs(2));
+    assert!(killed_at.elapsed() < Duration::from_secs(8));
 }
 
 #[test]
@@ -178,6 +231,29 @@ fn work_survives_a_daemon_restart_and_rejoins_the_count() {
 }
 
 #[test]
+fn queued_work_keeps_waiting_through_a_daemon_restart() {
+    // Treating a lost connection as "no broker" would start everything in the queue at
+    // the moment of the restart.
+    let env = Env::new(&capacity(1));
+    let mut holder = env.start(&["run", "--label", "holder", "--", "node", "-e", SLEEP]);
+    env.wait_for_pool("the holder", |p| p["used"] == 1);
+    let mut waiter = env.start(&["run", "--label", "waiter", "--", "node", "-e", ""]);
+    env.wait_for_pool("the queue", |p| p["waiters"].as_array().unwrap().len() == 1);
+
+    env.run(&["daemon", "stop"]);
+
+    let pool = env.wait_for_pool("both back", |p| {
+        p["used"] == 1 && p["waiters"].as_array().unwrap().len() == 1
+    });
+    assert_eq!(pool["holders"][0]["label"], "holder");
+    assert_eq!(pool["waiters"][0]["label"], "waiter");
+
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+    assert!(waiter.wait().unwrap().success());
+}
+
+#[test]
 fn low_priority_reaches_grandchildren() {
     let env = Env::new("");
     // Node reports a process's priority class as a nice value: 10 is below normal.
@@ -186,6 +262,26 @@ fn low_priority_reaches_grandchildren() {
         r#"const out=require('child_process').execFileSync('node',['-p',"{grandchild}"]);console.log(String(out).trim())"#
     );
     let output = env.run(&["run", "--low", "--", "node", "-e", &script]);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "10",
+        "{output:?}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn msys_children_stay_in_the_job() {
+    // Cygwin and MSYS break their children away from any job that permits it, which is
+    // how `bash -c` used to lose --low and all its accounting. Named by path, because a
+    // bare `bash` can be WSL's, which is a different thing entirely.
+    let bash = r"C:\Program Files\Git\usr\bin\bash.exe";
+    if !Path::new(bash).exists() {
+        return;
+    }
+    let env = Env::new("");
+    let script = r#"node -p "require('os').getPriority()""#;
+    let output = env.run(&["run", "--low", "--", bash, "-c", script]);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "10",

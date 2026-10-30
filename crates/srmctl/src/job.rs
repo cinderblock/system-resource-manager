@@ -66,11 +66,11 @@ mod imp {
 
         // SAFETY: the struct is plain data, for which all-zero is a valid "no limits".
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-        // Tools that deliberately run a shared server ask to break away, and should
-        // be allowed to: that server isn't this command's work.
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        // Breakaway stays forbidden. Cygwin and MSYS start every child outside the job
+        // whenever a job permits it, so allowing it would lose everything run through
+        // `bash -c`: its priority limit, its accounting, the lot.
         if low {
-            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PRIORITY_CLASS;
             limits.BasicLimitInformation.PriorityClass = BELOW_NORMAL_PRIORITY_CLASS;
         }
         // SAFETY: the pointer and size describe `limits`, which outlives the call.

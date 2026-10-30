@@ -13,10 +13,17 @@ use tokio::sync::oneshot;
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
 const FINAL_REPORT_TIMEOUT: Duration = Duration::from_secs(1);
+/// Longer than `RECONNECT_INTERVAL`, so running work gets back in first.
+const REJOIN_DELAY: Duration = Duration::from_secs(3);
 
 pub struct Options {
     pub request: LeaseRequest,
     pub command: Vec<String>,
+}
+
+struct Grant {
+    requested_at: Millis,
+    granted_at: Millis,
 }
 
 struct Held {
@@ -40,46 +47,81 @@ fn describe_wait(amount: u32, pool: &str, free: u32, capacity: u32, holders: &[L
     text
 }
 
+/// Wait for a lease, keeping our place in line across a daemon restart.
+///
+/// Losing the connection while queued is not the same as having no broker. Treating it
+/// that way would run every queued command the moment the daemon restarts, which is the
+/// exact pile-up this exists to stop.
 async fn acquire(request: &LeaseRequest) -> Result<Held> {
     let requested_at = now_ms();
-    let mut client = Client::connect_or_spawn().await?;
-    client.send(&Request::Acquire(request.clone())).await?;
+    let mut rejoining = false;
     loop {
-        match client.recv().await? {
-            Some(Response::Queued {
+        let mut client = Client::connect_or_spawn().await?;
+        if rejoining {
+            // Work that was already running is on its way back. Let it be counted first,
+            // or this would see an empty pool and start on top of it.
+            tokio::time::sleep(REJOIN_DELAY).await;
+        }
+        if let Some(held) = wait_in_line(&mut client, request, requested_at).await? {
+            return Ok(Held {
+                client,
+                requested_at: held.requested_at,
+                granted_at: held.granted_at,
+            });
+        }
+        eprintln!("srmctl: lost srmd while queued; rejoining the queue");
+        rejoining = true;
+    }
+}
+
+/// `None` means the connection dropped before a grant.
+async fn wait_in_line(
+    client: &mut Client,
+    request: &LeaseRequest,
+    requested_at: Millis,
+) -> Result<Option<Grant>> {
+    if client
+        .send(&Request::Acquire(request.clone()))
+        .await
+        .is_err()
+    {
+        return Ok(None);
+    }
+    loop {
+        match client.recv().await {
+            Ok(Some(Response::Queued {
                 amount,
                 free,
                 capacity,
                 holders,
                 ..
-            }) => {
+            })) => {
                 eprintln!(
                     "{}",
                     describe_wait(amount, &request.pool, free, capacity, &holders)
                 );
             }
-            Some(Response::Granted {
+            Ok(Some(Response::Granted {
                 amount,
                 capacity,
                 waited_ms,
                 granted_at,
                 ..
-            }) => {
+            })) => {
                 if waited_ms > 1000 {
                     eprintln!(
                         "srmctl: acquired {amount}/{capacity} after {}s",
                         waited_ms / 1000
                     );
                 }
-                return Ok(Held {
-                    client,
+                return Ok(Some(Grant {
                     requested_at,
                     granted_at,
-                });
+                }));
             }
-            Some(Response::Error { message }) => anyhow::bail!("{message}"),
-            Some(other) => anyhow::bail!("unexpected reply: {other:?}"),
-            None => anyhow::bail!("srmd closed the connection while we were queued"),
+            Ok(Some(Response::Error { message })) => anyhow::bail!("{message}"),
+            Ok(Some(other)) => anyhow::bail!("unexpected reply: {other:?}"),
+            Ok(None) | Err(_) => return Ok(None),
         }
     }
 }
@@ -129,7 +171,8 @@ async fn hold(
         eprintln!("srmctl: lost srmd; the command keeps running");
         held.client = loop {
             tokio::time::sleep(RECONNECT_INTERVAL).await;
-            let Ok(mut client) = Client::connect_or_spawn().await else {
+            // Only ever connect. Starting one here would undo `srmctl daemon stop`.
+            let Ok(mut client) = Client::connect().await else {
                 continue;
             };
             let adopt = Request::Adopt {

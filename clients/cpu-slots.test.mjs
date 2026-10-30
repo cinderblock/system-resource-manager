@@ -147,6 +147,23 @@ test("a lease rejoins after the daemon restarts", async () => {
   await until("the release", (p) => p.used === 0);
 });
 
+test("a queued claim stays queued through a daemon restart", async () => {
+  const holder = await broker.acquire(3, "holder");
+  const waiting = broker.acquire(1, "waiter");
+  await until("the queue", (p) => p.waiters.length === 1);
+
+  ctl("daemon", "stop");
+  ctl("daemon", "start");
+
+  const pool = await until("both back", (p) => p.used === 3 && p.waiters.length === 1);
+  assert.equal(pool.waiters[0].label, "waiter");
+  holder();
+  const waiter = await waiting;
+  await until("the grant", (p) => p.used === 1);
+  waiter();
+  await until("the release", (p) => p.used === 0);
+});
+
 test("the CLI passes through exit codes, as t3code's launcher needs", () => {
   const run = spawnSync(
     process.execPath,
