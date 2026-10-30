@@ -142,8 +142,8 @@ Answered 2026-10-30:
 4. [x] `cpu-slots.mjs` shim, verified against svdsa's usage.
 5. [x] Sampler, unbrokered detection, history.
 6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
-7. [ ] Tauri tray app. <- **current**
-8. [ ] Cutover: install to `~/.srm/bin`, replace `cpu-slots.mjs`, rewrite the skill, README.
+7. [ ] Tauri tray app: release build installed; needs a first real run. <- **current**
+8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:15 PM PDT, 21:15Z).
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
 machine to anything is a separate per-change authorization. See Things not to do.
@@ -164,6 +164,13 @@ machine to anything is a separate per-change authorization. See Things not to do
   every fleet test ran against a stale daemon and failed with "nothing listening".
 - The old broker doesn't record waiters, so a queued build looks like nothing is happening: a
   4-slot build sat invisible behind a 1-slot job for 10 minutes. Limitation 1, seen first-hand.
+- The old broker can crash outright: `EPERM ... open 'C:\Users\me\.claude\compute\.mutex'` from
+  `withMutex`. On Windows, opening a file another process is deleting fails with EPERM, not EEXIST,
+  and it only handled EEXIST. It hit 3 runs in a row on 2026-10-30 while another session polled for
+  4 slots, recreating the file twice a second, so any session can lose a command this way until
+  cutover. The daemon has no such file. Don't patch this; cutover removes it.
+- Before cutover, old-broker claims still running aren't counted by the daemon. They end on their
+  own, and build tools among them appear under "outside the budget" meanwhile.
 - SvelteKit 3: no `svelte.config.js` (options go to the `sveltekit()` plugin, not under `kit`), no
   `$lib`, and it needs TypeScript 6 (TypeScript 7 has no JS API).
 - A daemon started through a pipe would inherit that pipe and hang the reader forever. See
@@ -175,14 +182,17 @@ machine to anything is a separate per-change authorization. See Things not to do
 - [x] Architecture agreed (2026-10-30)
 - [x] Protocol, broker, sampler, history, `srmctl`, job object, shim, network layer: tested
 - [x] Tray frontend reviewed in a browser with demo data
-- [ ] Tray app built and run against a real daemon
-- [ ] Cutover
+- [ ] Tray app run against a real daemon: built, not launched (user asked for no surprise windows)
+- [x] Cutover: old `cpu-slots.mjs` and `SKILL.md` kept in `~/.srm/legacy`
 
 ## Open questions for the user
 
-1. GitHub repo: visibility and when to create it? *Recommend: private until first use on a second
+1. May the tray app be launched for its first real run? It stays hidden until its icon is clicked,
+   so the only visible change is a tray icon.
+2. GitHub repo: visibility and when to create it? *Recommend: private until first use on a second
    machine.*
-2. Which assets and peers go in the real config? Nothing is listed until you say so.
+3. Which assets and peers go in the real config? Nothing is listed until you say so. Enabling the
+   network face also needs a firewall decision.
 
 ## Things not to do
 
