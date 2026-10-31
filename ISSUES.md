@@ -17,6 +17,21 @@ Check `Get-Process srmd | Select HandleCount` after a few days of real use.
 A degraded asset shows `disk 93% full · disk 93% · cpu 12%`: the probe's warning and the
 gauge say the same thing (`app/src/lib/FleetView.svelte`).
 
+## Tray app and daemon stopped without a trace
+
+`srm-tray` started 2026-10-30 5:35 PM PDT (00:35Z) and was gone by 2026-10-31 2:31 PM PDT
+(21:31Z). `srmd` restarted at 9:26 PM PDT (04:26Z), and its log has no `stopping` line before
+that, so it didn't exit normally. There was no reboot, Application log entry or WER report.
+The T3 Code host restarted around 6:33 PM PDT (01:33Z), which may be related but isn't proven.
+`IsProcessInJob` can't settle it: Explorer and every desktop app here are in a job too. A Rust
+panic exits quietly, and `srm-tray` writes no log, so its next exit would be just as blank.
+
+## Nothing starts the tray app for you
+
+`scripts/install.ps1` copies `srm-tray.exe` but doesn't start it, there's no Start Menu entry,
+and "Start at login" is off by default. So after any exit the only way back is running
+`~/.srm/bin/srm-tray.exe` by hand, and an app with no icon gives no hint that it's missing.
+
 ## "Outside the budget" may list long-running agent hosts
 
 Right after cutover it showed `node bin.js`, pid 17116, 155 processes, 11.3 GiB, 1.5 cores.

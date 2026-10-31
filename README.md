@@ -167,7 +167,8 @@ powershell -File scripts/install.ps1
 
 That builds everything and installs to `~/.srm/bin`, plus `cpu-slots.mjs` and the `compute-budget`
 skill. The binaries can be replaced while they're running. Run `srm-tray.exe` to start the tray app;
-its menu has "Start at login".
+no window opens, and Windows usually hides a new icon behind the `^` beside the clock. Drag it onto
+the taskbar to keep it visible. Its right-click menu has "Start at login".
 
 Windows first, with no WSL. Linux is supported for `srmd` and `srmctl`, because the servers run Ubuntu.
 

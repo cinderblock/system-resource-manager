@@ -144,7 +144,7 @@ Answered 2026-10-30:
 4. [x] `cpu-slots.mjs` shim, verified against svdsa's usage.
 5. [x] Sampler, unbrokered detection, history.
 6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
-7. [ ] Tauri tray app: installed and running; popup not yet seen against real data. <- **current**
+7. [ ] Tauri tray app: installed, restarted 2026-10-31 2:33 PM PDT (21:33Z); popup not yet seen against real data. <- **current**
 8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:10 PM PDT, 21:10Z).
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
@@ -211,6 +211,12 @@ machine to anything is a separate per-change authorization. See Things not to do
   on a loaded machine with output buffered by `grep`. Give tests a time limit, not builds.
 - WebView2 ignores `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` under Tauri, because wry sets the
   arguments itself. Inspecting the hidden popup would need `additionalBrowserArgs` in the config.
+- **The tray app died unnoticed.** It was reported as running, but the user found no icon: it had
+  exited sometime after 5:35 PM PDT on 2026-10-30, and `srmd` also restarted that night without
+  logging a stop. Cause unknown (see `ISSUES.md`). Don't use `IsProcessInJob` to reason about this:
+  Explorer and ordinary desktop apps are in jobs too, so `true` proves nothing.
+- A new tray icon is unpromoted (no `IsPromoted` under `HKCU:\Control Panel\NotifyIconSettings`), so
+  Windows keeps it behind the `^` overflow until the user moves it.
 
 ## Progress log
 
@@ -219,12 +225,12 @@ machine to anything is a separate per-change authorization. See Things not to do
 - [x] Protocol, broker, sampler, history, `srmctl`, job object, shim, network layer: tested
 - [x] Tray frontend reviewed in a browser with demo data
 - [x] Published: https://github.com/cinderblock/system-resource-manager, history rewritten first to remove internal names (2026-10-30)
-- [ ] Tray popup checked by eye: the app runs and stayed up, but its contents can only be seen by clicking it
+- [ ] Tray popup checked by eye: the app runs, but its contents can only be seen by clicking it
 - [x] Cutover: old `cpu-slots.mjs` and `SKILL.md` kept in `~/.srm/legacy`
 
 ## Open questions for the user
 
-1. Does the tray popup look right? Click the tray icon: it can't be inspected from outside.
+1. Does the tray popup look right? Click the `^` beside the clock, then the tray icon: it can't be inspected from outside.
 
 ## Things not to do
 
