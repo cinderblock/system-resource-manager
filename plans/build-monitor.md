@@ -133,6 +133,8 @@ Answered 2026-10-30:
 4. **Lives here** in `system-resource-manager`, `git init` now, GitHub repo later.
 5. **Multi-system aware from the start**; user has no preference between same-code or thin client.
    Chosen: same `srmd` everywhere, probes for what can't run it.
+6. **Publish on GitHub, public,** provided it holds no personal info.
+7. **This machine only for now.** Other machines come later, each as its own approved change.
 
 ## Plan / steps
 
@@ -200,6 +202,16 @@ machine to anything is a separate per-change authorization. See Things not to do
   released the whole queue at once. Queued clients now rejoin, 3 s later so running work is
   counted first. Found by thinking through a reinstall under load rather than by a test.
 
+- **The stuck pipes had a second cause: frozen children.** `srmctl` starts a child suspended, joins
+  it to the job, then resumes it. Killed in that gap, it left the child suspended forever, holding
+  every inherited handle. Six `node -e setTimeout(()=>{},15000)` test processes were found hours
+  old. The job is now kill-on-close until the child is resumed, and only then cleared. Check for
+  these first if a pipe ever hangs again.
+- Some runs that looked hung were just compiling: about 300 crates at 2 jobs
+  on a loaded machine with output buffered by `grep`. Give tests a time limit, not builds.
+- WebView2 ignores `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` under Tauri, because wry sets the
+  arguments itself. Inspecting the hidden popup would need `additionalBrowserArgs` in the config.
+
 ## Progress log
 
 - [x] Read existing skill + broker
@@ -211,12 +223,7 @@ machine to anything is a separate per-change authorization. See Things not to do
 
 ## Open questions for the user
 
-1. May the tray app be launched for its first real run? It stays hidden until its icon is clicked,
-   so the only visible change is a tray icon.
-2. GitHub repo: visibility and when to create it? *Recommend: private until first use on a second
-   machine.*
-3. Which assets and peers go in the real config? Nothing is listed until you say so. Enabling the
-   network face also needs a firewall decision.
+1. Does the tray popup look right? Click the tray icon: it can't be inspected from outside.
 
 ## Things not to do
 

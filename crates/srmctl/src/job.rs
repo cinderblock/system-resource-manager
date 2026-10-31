@@ -9,8 +9,10 @@
 //! - Its CPU total includes processes that have exited. A build's short-lived
 //!   compilers are most of its work, and a sampler misses them.
 //!
-//! The job deliberately isn't kill-on-close. Build tools leave servers behind on
-//! purpose (`sccache`, `mspdbsrv`), and ending the wrapper shouldn't end those.
+//! Once the child is running the job isn't kill-on-close. Build tools leave servers
+//! behind on purpose (`sccache`, `mspdbsrv`), and ending the wrapper shouldn't end those.
+//! It is until then: the child starts suspended, and a wrapper killed before resuming it
+//! would leave a process frozen forever, holding every handle it inherited.
 
 use std::process::ExitStatus;
 use tokio::process::{Child, Command};
@@ -55,23 +57,19 @@ mod imp {
         }
     }
 
-    fn create(low: bool) -> std::io::Result<Job> {
-        // SAFETY: both arguments are optional and null asks for an anonymous job with
-        // default security. The handle is checked before use and owned by `Job`.
-        let handle = unsafe { CreateJobObjectW(null(), null()) };
-        if handle.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-        let job = Job { handle };
-
+    /// Replaces every limit, so it states all of them.
+    fn set_limits(job: &Job, low: bool, kill_on_close: bool) -> std::io::Result<()> {
         // SAFETY: the struct is plain data, for which all-zero is a valid "no limits".
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
         // Breakaway stays forbidden. Cygwin and MSYS start every child outside the job
         // whenever a job permits it, so allowing it would lose everything run through
         // `bash -c`: its priority limit, its accounting, the lot.
         if low {
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PRIORITY_CLASS;
             limits.BasicLimitInformation.PriorityClass = BELOW_NORMAL_PRIORITY_CLASS;
+        }
+        if kill_on_close {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         }
         // SAFETY: the pointer and size describe `limits`, which outlives the call.
         let ok = unsafe {
@@ -85,6 +83,18 @@ mod imp {
         if ok == 0 {
             return Err(std::io::Error::last_os_error());
         }
+        Ok(())
+    }
+
+    fn create(low: bool) -> std::io::Result<Job> {
+        // SAFETY: both arguments are optional and null asks for an anonymous job with
+        // default security. The handle is checked before use and owned by `Job`.
+        let handle = unsafe { CreateJobObjectW(null(), null()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        let job = Job { handle };
+        set_limits(&job, low, true)?;
         Ok(job)
     }
 
@@ -205,6 +215,11 @@ mod imp {
             ok != 0
         });
         resume(pid)?;
+        if let Some(job) = &job {
+            if let Err(e) = set_limits(job, low, false) {
+                eprintln!("srmctl: anything left running will end with this command ({e})");
+            }
+        }
         Ok((child, job))
     }
 }

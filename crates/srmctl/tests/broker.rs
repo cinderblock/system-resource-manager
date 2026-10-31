@@ -188,6 +188,35 @@ fn killing_a_holder_frees_its_slots_at_once() {
     assert!(killed_at.elapsed() < Duration::from_secs(8));
 }
 
+#[cfg(windows)]
+#[test]
+fn killing_the_wrapper_while_it_starts_a_child_leaves_nothing_frozen() {
+    // A child starts suspended. Kill the wrapper before it resumes that child and, without
+    // kill-on-close until then, the child stays frozen forever, holding its inherited
+    // handles. Those kept a test run's output pipe open for 30 minutes. The lease is granted
+    // just before the spawn, so killing the moment it appears lands in that window.
+    let env = Env::new(&capacity(1));
+    let marker = format!("frozen-{}", std::process::id());
+    let script = format!("setTimeout(()=>{{}},8000,'{marker}')");
+    for _ in 0..12 {
+        let mut holder = env.start(&["run", "--", "node", "-e", &script]);
+        env.wait_for_pool("the holder", |p| p["used"] == 1);
+        holder.kill().unwrap();
+        holder.wait().unwrap();
+        env.wait_for_pool("the slot back", |p| p["used"] == 0);
+    }
+    // Anything that really started is gone after its 8 seconds.
+    std::thread::sleep(Duration::from_secs(10));
+    let query = format!(
+        "@(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object {{ $_.CommandLine -match '{marker}' }}).Count"
+    );
+    let output = common::hidden("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &query])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+}
+
 #[test]
 fn a_stampede_of_clients_shares_one_daemon() {
     let env = Env::new(&capacity(4));
