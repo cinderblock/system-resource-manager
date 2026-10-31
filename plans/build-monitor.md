@@ -144,7 +144,7 @@ Answered 2026-10-30:
 4. [x] `cpu-slots.mjs` shim, verified against svdsa's usage.
 5. [x] Sampler, unbrokered detection, history.
 6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
-7. [ ] Tauri tray app: installed, restarted 2026-10-31 2:33 PM PDT (21:33Z); popup not yet seen against real data. <- **current**
+7. [x] Tauri tray app: installed, restarted 2026-10-31 2:33 PM PDT (21:33Z), popup checked by the user against real data.
 8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:10 PM PDT, 21:10Z).
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
@@ -225,12 +225,12 @@ machine to anything is a separate per-change authorization. See Things not to do
 - [x] Protocol, broker, sampler, history, `srmctl`, job object, shim, network layer: tested
 - [x] Tray frontend reviewed in a browser with demo data
 - [x] Published: https://github.com/cinderblock/system-resource-manager, history rewritten first to remove internal names (2026-10-30)
-- [ ] Tray popup checked by eye: the app runs, but its contents can only be seen by clicking it
+- [x] Tray popup checked by eye: the user reported it "looking good" (2026-10-31)
 - [x] Cutover: old `cpu-slots.mjs` and `SKILL.md` kept in `~/.srm/legacy`
 
 ## Open questions for the user
 
-1. Does the tray popup look right? Click the `^` beside the clock, then the tray icon: it can't be inspected from outside.
+1. Are the windows and beeps from 2026-10-30 still happening? Their cause was never confirmed.
 
 ## Things not to do
 
