@@ -144,7 +144,7 @@ Answered 2026-10-30:
 4. [x] `cpu-slots.mjs` shim, verified against svdsa's usage.
 5. [x] Sampler, unbrokered detection, history.
 6. [x] Network: snapshot/metrics, peers, mDNS, probes (tcp, http, node_exporter).
-7. [ ] Tauri tray app: release build installed; needs a first real run. <- **current**
+7. [ ] Tauri tray app: installed and running; popup not yet seen against real data. <- **current**
 8. [x] Cutover: installed to `~/.srm/bin`, `cpu-slots.mjs` replaced, skill rewritten, README (2026-10-30, about 2:10 PM PDT, 21:10Z).
 
 Deploying `srmd` to any server, listing real devices, opening a firewall port, or joining this
@@ -218,7 +218,8 @@ machine to anything is a separate per-change authorization. See Things not to do
 - [x] Architecture agreed (2026-10-30)
 - [x] Protocol, broker, sampler, history, `srmctl`, job object, shim, network layer: tested
 - [x] Tray frontend reviewed in a browser with demo data
-- [ ] Tray app run against a real daemon: built, not launched (user asked for no surprise windows)
+- [x] Published: https://github.com/cinderblock/system-resource-manager, history rewritten first to remove internal names (2026-10-30)
+- [ ] Tray popup checked by eye: the app runs and stayed up, but its contents can only be seen by clicking it
 - [x] Cutover: old `cpu-slots.mjs` and `SKILL.md` kept in `~/.srm/legacy`
 
 ## Open questions for the user
