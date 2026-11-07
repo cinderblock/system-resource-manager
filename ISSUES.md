@@ -38,3 +38,12 @@ Right after cutover it showed `node bin.js`, pid 17116, 155 processes, 11.3 GiB,
 That looks like an agent host rather than a build. The rule is any build-tool name staying
 above one core (`BUILD_TOOLS` in `crates/srmd/src/sampler.rs`), so `node` and `bun` match
 long-lived servers. It went away by itself, but expect some noise until the rule is tuned.
+
+## The frozen-child test still leaves a frozen child sometimes
+
+`killing_the_wrapper_while_it_starts_a_child_leaves_nothing_frozen` (`crates/srmctl/tests/broker.rs`)
+failed 2 of 4 runs on Noook on 2026-11-07 (master `51ffb62`, run inside `srmctl run`), with
+`left: "1" right: "0"`. Each failure left a `node.exe -e setTimeout(...,'frozen-<pid>')` behind with
+its thread `Suspended`, holding the test's inherited stdout open, so the `cargo test` pipe never
+closed until that process was killed by hand. So the window that `93e8f2b` closed can still be hit.
+CI skips this test until it's fixed.
