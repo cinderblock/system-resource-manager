@@ -38,3 +38,32 @@ Right after cutover it showed `node bin.js`, pid 17116, 155 processes, 11.3 GiB,
 That looks like an agent host rather than a build. The rule is any build-tool name staying
 above one core (`BUILD_TOOLS` in `crates/srmd/src/sampler.rs`), so `node` and `bun` match
 long-lived servers. It went away by itself, but expect some noise until the rule is tuned.
+
+## The frozen-child test still leaves a frozen child sometimes
+
+`killing_the_wrapper_while_it_starts_a_child_leaves_nothing_frozen` (`crates/srmctl/tests/broker.rs`)
+failed 2 of 4 runs on Noook on 2026-11-07 (master `51ffb62`, run inside `srmctl run`), with
+`left: "1" right: "0"`. Each failure left a `node.exe -e setTimeout(...,'frozen-<pid>')` behind with
+its thread `Suspended`, holding the test's inherited stdout open, so the `cargo test` pipe never
+closed until that process was killed by hand. So the window that `93e8f2b` closed can still be hit.
+CI skips this test until it's fixed.
+
+## A daemon restart can drop a `status` call
+
+`queued_work_keeps_waiting_through_a_daemon_restart` (`crates/srmctl/tests/broker.rs`) failed 1 of 2
+runs on GitHub's `windows-latest` (PR #1, 2026-11-07), and passed every local run. Straight after
+`daemon stop`, `wait_for_pool` calls `status`, which failed with
+`Error: srmd closed the connection without answering`. Either `status` needs to ride out a restart
+the way `run` does, or the test helper does. CI skips this test until it's settled.
+
+## Lease CPU use reads as nearly zero on Linux
+
+On GitHub's `ubuntu-latest` (PR #1, 2026-11-07), two tests in `crates/srmctl/tests/broker.rs` fail
+every run, and pass on Windows:
+
+- `spending_is_measured_and_kept`: `2 s of CPU measured as 0.050480869073781964` (and `0.0701...`).
+- `a_running_lease_shows_its_live_process_usage`: the top process isn't `node`
+  (`usage["top"][0]["name"].starts_with("node")` fails).
+
+So on Linux `srmd` doesn't attribute a lease's child processes to it, which matters for the servers'
+history and the "using N cores" display. CI skips both tests on Linux until it's fixed.
