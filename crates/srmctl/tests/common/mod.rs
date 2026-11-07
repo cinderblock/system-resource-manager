@@ -12,6 +12,7 @@ static NEXT: AtomicU32 = AtomicU32::new(0);
 /// A suite starts hundreds of console programs. Started from a parent with no console,
 /// each would open a window on the desktop of whoever is working at this machine.
 pub fn hidden(program: &str) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(program);
     #[cfg(windows)]
     {

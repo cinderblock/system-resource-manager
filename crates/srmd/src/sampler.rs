@@ -368,7 +368,12 @@ mod tests {
         p.cmd = [
             "node",
             "--max-old-space-size=4096",
-            r"C:\x\vite.js",
+            // This platform's own form: `Path` only splits on `\` on Windows.
+            if cfg!(windows) {
+                r"C:\x\vite.js"
+            } else {
+                "/x/vite.js"
+            },
             "build",
         ]
         .map(String::from)

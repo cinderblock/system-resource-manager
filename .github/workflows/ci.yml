@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo build --workspace --locked
+      # Every test gets a private daemon through SRM_HOME and SRM_ENDPOINT, and node is
+      # the portable child process. The skipped tests are flaky (ISSUES.md).
+      - run: >-
+          cargo test --workspace --locked --
+          --skip killing_the_wrapper_while_it_starts_a_child_leaves_nothing_frozen
+          --skip queued_work_keeps_waiting_through_a_daemon_restart
+      # The shim's tests use the debug binaries the build left in target/debug. Named
+      # by file: the runner's Node doesn't take a directory.
+      - run: node --test clients/cpu-slots.test.mjs
+
+  linux:
+    name: Rust (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Linux runs srmd and srmctl. The tray app is Windows-only.
+      - run: cargo clippy -p srm-proto -p srmd -p srmctl --all-targets --locked -- -D warnings
+      - run: cargo build -p srmd -p srmctl --locked
+      # The skipped tests fail on Linux: a lease's CPU use isn't measured (ISSUES.md).
+      - run: >-
+          cargo test -p srm-proto -p srmd -p srmctl --locked --
+          --skip a_running_lease_shows_its_live_process_usage
+          --skip spending_is_measured_and_kept
+      - run: node --test clients/cpu-slots.test.mjs
+
+  app:
+    name: Tray app frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run build
